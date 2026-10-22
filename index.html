@@ -34,7 +34,6 @@ button.gray{background:#757575}
 select,input{padding:6px;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text)}
 .container{max-width:1200px;margin:0 auto}
 .week-select{margin:8px 0;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
-/* 新增：倒计时提示条 */
 #countDownTip{
   padding:8px 12px;
   background:var(--active);
@@ -49,7 +48,6 @@ table{width:100%;border-collapse:collapse;margin:10px 0;table-layout:fixed}
 th,td{border:1px solid var(--border);text-align:center;vertical-align:top}
 th{background:var(--card);position:sticky;top:0;padding:4px}
 .time-col{width:90px;font-size:0.8rem;padding:4px}
-/* 关键：单元格相对定位，让课程块可以绝对定位撑满 */
 .course-cell{position:relative;height:60px;padding:0}
 .block{
   position:absolute;
@@ -99,7 +97,6 @@ th{background:var(--card);position:sticky;top:0;padding:4px}
 <select id="weekSel"></select>
 <span class="tip">基准：2026-10-07 = 第5周 周三，页面自动计算当前周</span>
 </div>
-<!-- 新增：倒计时/今日状态提示 -->
 <div id="countDownTip"></div>
 <div class="search-bar">
 <input id="searchKey" placeholder="输入课程名称关键词搜索...">
@@ -129,7 +126,7 @@ th{background:var(--card);position:sticky;top:0;padding:4px}
 <button id="addActBtn">添加活动</button>
 </div>
 </div>
-<!-- 添加课程弹窗 -->
+
 <div class="modal" id="courseModal">
 <div class="modal-box">
 <h3>添加课程</h3>
@@ -147,7 +144,7 @@ th{background:var(--card);position:sticky;top:0;padding:4px}
 </div>
 </div>
 </div>
-<!-- 添加活动弹窗 -->
+
 <div class="modal" id="actModal">
 <div class="modal-box">
 <h3>添加活动</h3>
@@ -159,7 +156,7 @@ th{background:var(--card);position:sticky;top:0;padding:4px}
 </div>
 </div>
 </div>
-<!-- 课程/活动详情弹窗 -->
+
 <div class="modal" id="detailModal">
 <div class="modal-box">
 <h3 id="detailTitle"></h3>
@@ -171,7 +168,7 @@ th{background:var(--card);position:sticky;top:0;padding:4px}
 </div>
 </div>
 </div>
-<!-- 搜索结果弹窗 -->
+
 <div class="modal" id="searchModal">
 <div class="modal-box">
 <h3>搜索结果</h3>
@@ -181,6 +178,7 @@ th{background:var(--card);position:sticky;top:0;padding:4px}
 </div>
 </div>
 </div>
+
 <script>
 // ========= 基础配置 =========
 const baseDateStr = "2026-10-07";
@@ -197,16 +195,41 @@ const sectionTime = [
 ];
 const weekDayName = ["周一","周二","周三","周四","周五","周六","周日"];
 let courseColorMap = {};
-let courses = JSON.parse(localStorage.getItem("courses")) || [];
-let activities = JSON.parse(localStorage.getItem("activities")) || [];
+
+// ====================== 【这里替换成你自己的信息】 ======================
+const CLOUD_BIN_ID = "替换成你的Bin ID";
+const CLOUD_API_KEY = "替换成你的X-Master-Key";
+// ======================================================================
+const CLOUD_URL = `https://api.jsonbin.io/v3/b/${CLOUD_BIN_ID}`;
+
+let courses = [];
+let activities = [];
 let currentWeek = 1;
 let modalTarget = null;
 
-// 初始化周下拉（19、20周标记考试周）
+// 从云端加载数据
+async function loadCloudData(){
+  try{
+    const res = await fetch(CLOUD_URL, {
+      headers: { "X-Master-Key": CLOUD_API_KEY }
+    });
+    const data = await res.json();
+    courses = data.record.courses || [];
+    activities = data.record.activities || [];
+    render();
+  }catch(e){
+    console.error("加载云端数据失败，使用本地备份", e);
+    courses = JSON.parse(localStorage.getItem("courses")) || [];
+    activities = JSON.parse(localStorage.getItem("activities")) || [];
+    render();
+  }
+}
+
+// 初始化周下拉
 const weekSel = document.getElementById("weekSel");
 for(let i=1;i<=20;i++){
   const opt = document.createElement("option");
-  opt.value=i;
+  opt.value = i;
   opt.textContent = i >= 19 ? `第${i}周（考试周）` : `第${i}周`;
   weekSel.appendChild(opt);
 }
@@ -222,39 +245,34 @@ function calcCurrentWeek(){
   return w;
 }
 
-// 辅助函数：时间字符串转分钟数
 function timeStrToMin(str){
   const [h, m] = str.split(":").map(Number);
   return h*60 + m;
 }
 
-// 新增：更新上课倒计时与今日课程状态
+// 更新上课倒计时
 function updateCountDown(){
   const tipEl = document.getElementById("countDownTip");
   const now = new Date();
   const nowMin = now.getHours()*60 + now.getMinutes();
-  // 转换星期格式：0=周一 ... 6=周日
   const todayWd = now.getDay() === 0 ? 6 : now.getDay() - 1;
   
-  // 筛选本周今日的有效课程，按开始节次升序
   const todayCourses = courses
     .filter(c => c.weekDay === todayWd && currentWeek >= c.wStart && currentWeek <= c.wEnd)
     .sort((a,b) => a.startSec - b.startSec);
   
-  // 考试周或当日无课
   if(todayCourses.length === 0){
     tipEl.textContent = currentWeek >= 19 ? "📝 考试周，今日无课程安排" : "📅 今日无课程安排";
     return;
   }
   
-  // 匹配状态：正在上课 / 等待下节课 / 全部结束
   let nextCourse = null;
   let isInClass = false;
   let currentCourseName = "";
   
   for(const c of todayCourses){
     const startMin = timeStrToMin(sectionTime[c.startSec - 1].start);
-    const endMin = timeStrToMin(sectionTime[c.endSec - 1].start) + 50; // 单节课按50分钟计算
+    const endMin = timeStrToMin(sectionTime[c.endSec - 1].start) + 50;
     
     if(nowMin < startMin){
       nextCourse = { ...c, startMin };
@@ -281,12 +299,12 @@ function updateCountDown(){
   }
 }
 
-// 渲染课表（连堂rowspan + 周过滤 + 考试周处理）
+// 渲染课表
 function render(){
   const tbody = document.getElementById("tbody");
   tbody.innerHTML="";
   
-  // ===== 考试周特殊展示 =====
+  // 考试周特殊展示
   if(currentWeek >= 19){
     tbody.innerHTML = `
     <tr>
@@ -302,13 +320,9 @@ function render(){
     return;
   }
   
-  // 8行x7列网格，标记单元格占用
   const grid = Array.from({length:8}, ()=> Array(7).fill(null));
-  // 填充课程：按当前周过滤
   courses.forEach(c=>{
-    // 核心：当前周不在课程周范围内，直接跳过
     if(currentWeek < c.wStart || currentWeek > c.wEnd) return;
-    
     if(!courseColorMap[c.name]) courseColorMap[c.name] = randomColor();
     const startIdx = c.startSec - 1;
     const endIdx = c.endSec - 1;
@@ -319,12 +333,11 @@ function render(){
       rowspan: endIdx - startIdx + 1,
       color: courseColorMap[c.name]
     };
-    // 标记后续行被占用
     for(let i=startIdx+1; i<=endIdx; i++){
       grid[i][c.weekDay] = {type:"span"};
     }
   })
-  // 填充活动
+
   activities.forEach(a=>{
     const dt = new Date(a.time);
     const wd = dt.getDay();
@@ -339,7 +352,7 @@ function render(){
       rowspan:1
     };
   })
-  // 生成表格
+
   for(let row=0; row<8; row++){
     const tr = document.createElement("tr");
     tr.innerHTML = `<td class="time-col">第${sectionTime[row].sec}节<br/>${sectionTime[row].start}</td>`;
@@ -375,10 +388,9 @@ function render(){
   }
   highlightCurrentSection();
   saveStorage();
-  updateCountDown(); // 渲染完更新倒计时
+  updateCountDown();
 }
 
-// 根据时间匹配节次
 function getSecByTime(datetimeStr){
   const d = new Date(datetimeStr);
   const h = d.getHours(),m=d.getMinutes();
@@ -391,7 +403,6 @@ function getSecByTime(datetimeStr){
   return null;
 }
 
-// 随机浅颜色
 function randomColor(){
   const r = 200+Math.floor(Math.random()*55);
   const g = 200+Math.floor(Math.random()*55);
@@ -399,16 +410,13 @@ function randomColor(){
   return `rgb(${r},${g},${b})`;
 }
 
-// 实时时间
 function updateTime(){
   const now = new Date();
   document.getElementById("nowTime").innerText = now.toLocaleString("zh-CN");
 }
 setInterval(updateTime,1000);
-// 每分钟更新一次倒计时
 setInterval(updateCountDown, 60000);
 
-// 高亮当前节次 + 课前5分钟提醒
 function highlightCurrentSection(){
   document.querySelectorAll(".current-cell").forEach(el=>el.classList.remove("current-cell"));
   const now = new Date();
@@ -430,7 +438,6 @@ function highlightCurrentSection(){
   }
 }
 
-// 打开详情弹窗
 function openDetail(type,item){
   modalTarget = {type,item};
   const title = document.getElementById("detailTitle");
@@ -449,10 +456,9 @@ function openDetail(type,item){
     <div>活动：${item.name}</div>
     <div>时间：${new Date(item.time).toLocaleString()}</div>`;
   }
-  document.getElementById("detailModal").style.display="flex";
+  document.getElementById("detailModal").style.display = "flex";
 }
 
-// 语音朗读
 document.getElementById("readVoice").onclick = function(){
   if(!modalTarget) return;
   const item = modalTarget.item;
@@ -466,7 +472,6 @@ document.getElementById("readVoice").onclick = function(){
   speechSynthesis.speak(utter);
 }
 
-// 删除
 document.getElementById("delItem").onclick = function(){
   if(!modalTarget) return;
   if(modalTarget.type==="course"){
@@ -478,7 +483,6 @@ document.getElementById("delItem").onclick = function(){
   render();
 }
 
-// 弹窗开关
 document.getElementById("addCourseBtn").onclick = ()=>document.getElementById("courseModal").style.display="flex";
 document.getElementById("addActBtn").onclick = ()=>document.getElementById("actModal").style.display="flex";
 document.querySelectorAll(".closeModal").forEach(b=>b.onclick=closeAllModal);
@@ -487,7 +491,6 @@ function closeAllModal(){
   modalTarget=null;
 }
 
-// 保存课程
 document.getElementById("saveCourse").onclick = function(){
   const name = document.getElementById("cName").value.trim();
   const wd = Number(document.getElementById("cWeekDay").value);
@@ -504,7 +507,6 @@ document.getElementById("saveCourse").onclick = function(){
   render();
 }
 
-// 保存活动
 document.getElementById("saveAct").onclick = function(){
   const name = document.getElementById("aName").value.trim();
   const time = document.getElementById("aTime").value;
@@ -515,24 +517,33 @@ document.getElementById("saveAct").onclick = function(){
   requestNotificationPermission();
 }
 
-// 本地存储
-function saveStorage(){
+// 云端+本地双保存
+async function saveStorage(){
   localStorage.setItem("courses",JSON.stringify(courses));
   localStorage.setItem("activities",JSON.stringify(activities));
+  try{
+    await fetch(CLOUD_URL, {
+      method: "PUT",
+      headers: {
+        "X-Master-Key": CLOUD_API_KEY,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ courses, activities })
+    });
+  }catch(e){
+    console.error("保存到云端失败", e);
+  }
 }
 
-// 周切换
 weekSel.onchange = function(){
   currentWeek = Number(this.value);
   render();
 }
 
-// 暗色主题
 document.getElementById("themeBtn").onclick = function(){
   document.body.classList.toggle("dark");
 }
 
-// 导出图片
 document.getElementById("exportImg").onclick = async function(){
   const tableDom = document.getElementById("table");
   const canvas = await html2canvas(tableDom);
@@ -542,7 +553,7 @@ document.getElementById("exportImg").onclick = async function(){
   link.click();
 }
 
-// ========= 活动提醒模块 =========
+// 活动提醒模块
 function requestNotificationPermission(){
   if(Notification && Notification.permission!=="granted") Notification.requestPermission();
 }
@@ -580,7 +591,7 @@ setInterval(()=>{
   })
 },1000);
 
-// ========= 搜索功能 =========
+// 搜索功能
 document.getElementById("searchBtn").onclick = function(){
   const key = document.getElementById("searchKey").value.trim().toLowerCase();
   const wd = Number(document.getElementById("searchWeekDay").value);
@@ -617,7 +628,7 @@ document.getElementById("searchKey").addEventListener("keydown",function(e){
 updateTime();
 currentWeek = calcCurrentWeek();
 weekSel.value = currentWeek;
-render();
+loadCloudData();
 requestNotificationPermission();
 </script>
 </body>
