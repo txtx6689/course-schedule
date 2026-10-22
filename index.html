@@ -195,35 +195,74 @@ const sectionTime = [
 ];
 const weekDayName = ["周一","周二","周三","周四","周五","周六","周日"];
 let courseColorMap = {};
-
-// ====================== 【这里替换成你自己的信息】 ======================
-const CLOUD_BIN_ID = "替换成你的Bin ID";
-const CLOUD_API_KEY = "替换成你的X-Master-Key";
-// ======================================================================
-const CLOUD_URL = `https://api.jsonbin.io/v3/b/${CLOUD_BIN_ID}`;
-
-let courses = [];
-let activities = [];
 let currentWeek = 1;
 let modalTarget = null;
 
-// 从云端加载数据
-async function loadCloudData(){
-  try{
-    const res = await fetch(CLOUD_URL, {
-      headers: { "X-Master-Key": CLOUD_API_KEY }
-    });
-    const data = await res.json();
-    courses = data.record.courses || [];
-    activities = data.record.activities || [];
-    render();
-  }catch(e){
-    console.error("加载云端数据失败，使用本地备份", e);
-    courses = JSON.parse(localStorage.getItem("courses")) || [];
-    activities = JSON.parse(localStorage.getItem("activities")) || [];
-    render();
-  }
-}
+// ========= 内置默认课程（打开即有，所有人一致） =========
+const defaultCourses = [
+  // 军事理论
+  {id:1001, name:"军事理论", weekDay:0, startSec:5, endSec:6, wStart:1, wEnd:2, loc:"薛领｜日新楼阶 102"},
+  {id:1002, name:"军事理论", weekDay:3, startSec:5, endSec:6, wStart:1, wEnd:2, loc:"薛领｜日新楼阶 102"},
+  {id:1003, name:"军事理论", weekDay:2, startSec:1, endSec:2, wStart:6, wEnd:10, loc:"薛领｜日新楼阶 202"},
+
+  // 程序设计基础
+  {id:1004, name:"程序设计基础", weekDay:1, startSec:1, endSec:2, wStart:3, wEnd:4, loc:"薛海燕｜信息楼 102（大数据技术实训室）"},
+  {id:1005, name:"程序设计基础", weekDay:1, startSec:1, endSec:2, wStart:6, wEnd:16, loc:"薛海燕｜信息楼 102（大数据技术实训室）"},
+  {id:1006, name:"程序设计基础", weekDay:3, startSec:3, endSec:4, wStart:3, wEnd:3, loc:"薛海燕｜信息楼 102（大数据技术实训室）"},
+  {id:1007, name:"程序设计基础", weekDay:3, startSec:3, endSec:4, wStart:5, wEnd:16, loc:"薛海燕｜信息楼 102（大数据技术实训室）"},
+  {id:1008, name:"程序设计基础", weekDay:1, startSec:7, endSec:8, wStart:4, wEnd:4, loc:"薛海燕｜信息楼 102（大数据技术实训室）"},
+  {id:1009, name:"程序设计基础", weekDay:1, startSec:7, endSec:8, wStart:6, wEnd:6, loc:"薛海燕｜信息楼 102（大数据技术实训室）"},
+  {id:1010, name:"程序设计基础", weekDay:1, startSec:7, endSec:8, wStart:8, wEnd:9, loc:"薛海燕｜信息楼 102（大数据技术实训室）"},
+  {id:1011, name:"程序设计基础", weekDay:1, startSec:7, endSec:8, wStart:11, wEnd:11, loc:"薛海燕｜信息楼 102（大数据技术实训室）"},
+
+  // 思想道德与法治
+  {id:1012, name:"思想道德与法治", weekDay:2, startSec:3, endSec:4, wStart:3, wEnd:4, loc:"陆霞｜日新楼阶 102"},
+  {id:1013, name:"思想道德与法治", weekDay:2, startSec:3, endSec:4, wStart:6, wEnd:10, loc:"陆霞｜日新楼阶 102"},
+  {id:1014, name:"思想道德与法治", weekDay:3, startSec:1, endSec:2, wStart:3, wEnd:3, loc:"陆霞｜日新楼阶 102"},
+  {id:1015, name:"思想道德与法治", weekDay:3, startSec:1, endSec:2, wStart:5, wEnd:11, loc:"陆霞｜日新楼阶 102"},
+
+  // Web前端编程技术
+  {id:1016, name:"Web前端编程技术", weekDay:0, startSec:5, endSec:6, wStart:3, wEnd:4, loc:"陈健｜信息楼 105（云计算技术）"},
+  {id:1017, name:"Web前端编程技术", weekDay:0, startSec:5, endSec:6, wStart:6, wEnd:18, loc:"陈健｜信息楼 105（云计算技术）"},
+  {id:1018, name:"Web前端编程技术", weekDay:3, startSec:5, endSec:6, wStart:3, wEnd:3, loc:"陈健｜信息楼 105（云计算技术）"},
+  {id:1019, name:"Web前端编程技术", weekDay:3, startSec:5, endSec:6, wStart:5, wEnd:18, loc:"陈健｜信息楼 105（云计算技术）"},
+  {id:1020, name:"Web前端编程技术", weekDay:2, startSec:3, endSec:4, wStart:17, wEnd:17, loc:"陈健｜信息楼 105（云计算技术）"},
+
+  // 公共外语1（英语）
+  {id:1021, name:"公共外语1（英语）", weekDay:4, startSec:1, endSec:2, wStart:5, wEnd:5, loc:"OXLEY MAR｜日新楼北 603"},
+  {id:1022, name:"公共外语1（英语）", weekDay:4, startSec:1, endSec:2, wStart:7, wEnd:11, loc:"OXLEY MAR｜日新楼北 603"},
+  {id:1023, name:"公共外语1（英语）", weekDay:4, startSec:1, endSec:2, wStart:13, wEnd:13, loc:"OXLEY MAR｜日新楼北 603"},
+  {id:1024, name:"公共外语1（英语）", weekDay:4, startSec:1, endSec:2, wStart:15, wEnd:16, loc:"OXLEY MAR｜日新楼北 603"},
+  {id:1025, name:"公共外语1（英语）", weekDay:4, startSec:3, endSec:4, wStart:5, wEnd:16, loc:"王强｜日新楼北 601"},
+  {id:1026, name:"公共外语1（英语）", weekDay:4, startSec:3, endSec:4, wStart:18, wEnd:18, loc:"王强｜日新楼北 601"},
+
+  // 体育与健康1
+  {id:1027, name:"体育与健康1", weekDay:4, startSec:5, endSec:6, wStart:5, wEnd:16, loc:"阴晓林｜D33 南门健身房"},
+  {id:1028, name:"体育与健康1", weekDay:4, startSec:5, endSec:6, wStart:18, wEnd:18, loc:"阴晓林｜D33 南门健身房"},
+
+  // 大学生心理健康
+  {id:1029, name:"大学生心理健康", weekDay:1, startSec:3, endSec:4, wStart:6, wEnd:8, loc:"杨凯烽｜日新楼南 606"},
+
+  // 人工智能引论
+  {id:1030, name:"人工智能引论", weekDay:3, startSec:7, endSec:8, wStart:6, wEnd:7, loc:"张立｜日新楼北 604"},
+  {id:1031, name:"人工智能引论", weekDay:3, startSec:7, endSec:8, wStart:9, wEnd:9, loc:"张立｜日新楼北 604"},
+  {id:1032, name:"人工智能引论", weekDay:3, startSec:7, endSec:8, wStart:13, wEnd:18, loc:"张立｜日新楼北 604"},
+  {id:1033, name:"人工智能引论", weekDay:0, startSec:3, endSec:4, wStart:13, wEnd:18, loc:"张立｜日新楼北 604"},
+
+  // 大学生职业规划
+  {id:1034, name:"大学生职业规划", weekDay:2, startSec:1, endSec:2, wStart:11, wEnd:13, loc:""},
+
+  // 走在前列的广东
+  {id:1035, name:"走在前列的广东", weekDay:2, startSec:3, endSec:4, wStart:11, wEnd:13, loc:""},
+  {id:1036, name:"走在前列的广东", weekDay:3, startSec:1, endSec:2, wStart:12, wEnd:13, loc:""},
+  {id:1037, name:"走在前列的广东（校外实训）", weekDay:4, startSec:7, endSec:8, wStart:13, wEnd:13, loc:"校外实训基地"},
+
+  // 形势与政策
+  {id:1038, name:"形势与政策", weekDay:3, startSec:1, endSec:2, wStart:14, wEnd:17, loc:""}
+];
+
+let courses = [...defaultCourses];
+let activities = JSON.parse(localStorage.getItem("activities")) || [];
 
 // 初始化周下拉
 const weekSel = document.getElementById("weekSel");
@@ -517,22 +556,9 @@ document.getElementById("saveAct").onclick = function(){
   requestNotificationPermission();
 }
 
-// 云端+本地双保存
-async function saveStorage(){
-  localStorage.setItem("courses",JSON.stringify(courses));
+// 本地保存活动
+function saveStorage(){
   localStorage.setItem("activities",JSON.stringify(activities));
-  try{
-    await fetch(CLOUD_URL, {
-      method: "PUT",
-      headers: {
-        "X-Master-Key": CLOUD_API_KEY,
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({ courses, activities })
-    });
-  }catch(e){
-    console.error("保存到云端失败", e);
-  }
 }
 
 weekSel.onchange = function(){
@@ -582,14 +608,14 @@ setInterval(()=>{
   activities.forEach(a=>{
     const t = new Date(a.time);
     const diff = t - now;
-    if(diff >= 0 && diff <= 10000 && diff >= (3*60*60*1000 -10000)){
+    if(diff >= 0 && diff <= 10000 && diff >= (3*60*60*1000 - 10000)){
       alert(`【活动提醒】${a.name} 将在3小时后开始！`);
       if(Notification && Notification.permission==="granted"){
         new Notification("活动提前3小时提醒",{body:a.name});
       }
     }
   })
-},1000);
+},10000);
 
 // 搜索功能
 document.getElementById("searchBtn").onclick = function(){
@@ -628,7 +654,7 @@ document.getElementById("searchKey").addEventListener("keydown",function(e){
 updateTime();
 currentWeek = calcCurrentWeek();
 weekSel.value = currentWeek;
-loadCloudData();
+render();
 requestNotificationPermission();
 </script>
 </body>
