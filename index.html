@@ -1,0 +1,624 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>大学课程表(1-20周 | 语音朗读 | 活动提醒 | 搜索)</title>
+<script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;font-family:system-ui, sans-serif}
+:root{
+  --bg:#fff;
+  --text:#222;
+  --card:#f8f9fa;
+  --border:#ddd;
+  --active:#e1f5fe;
+  --highlight:#bbdefb;
+}
+.dark{
+  --bg:#121212;
+  --text:#eee;
+  --card:#1e1e1e;
+  --border:#333;
+  --active:#263238;
+  --highlight:#283593;
+}
+body{background:var(--bg);color:var(--text);padding:8px;transition:.3s}
+header{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:10px}
+h1{font-size:1.4rem;margin-right:auto}
+#nowTime{font-family:monospace;font-size:1rem;padding:4px 8px;background:var(--card);border-radius:6px}
+button{padding:6px 10px;border:none;border-radius:6px;cursor:pointer;background:#2196f3;color:#fff}
+button.danger{background:#f44336}
+button.success{background:#4caf50}
+button.gray{background:#757575}
+select,input{padding:6px;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text)}
+.container{max-width:1200px;margin:0 auto}
+.week-select{margin:8px 0;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+/* 新增：倒计时提示条 */
+#countDownTip{
+  padding:8px 12px;
+  background:var(--active);
+  border-radius:6px;
+  margin:8px 0;
+  font-size:0.95rem;
+  font-weight:500;
+}
+.search-bar{margin:8px 0;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.search-bar input{flex:1;min-width:160px}
+table{width:100%;border-collapse:collapse;margin:10px 0;table-layout:fixed}
+th,td{border:1px solid var(--border);text-align:center;vertical-align:top}
+th{background:var(--card);position:sticky;top:0;padding:4px}
+.time-col{width:90px;font-size:0.8rem;padding:4px}
+/* 关键：单元格相对定位，让课程块可以绝对定位撑满 */
+.course-cell{position:relative;height:60px;padding:0}
+.block{
+  position:absolute;
+  top:2px;left:2px;right:2px;bottom:2px;
+  padding:4px;
+  border-radius:4px;
+  font-size:0.8rem;
+  color:#000;
+  cursor:pointer;
+  overflow:hidden;
+  display:flex;
+  flex-direction:column;
+  justify-content:center;
+  align-items:center;
+}
+.block-act{color:#111}
+.current-cell{background:var(--highlight) !important}
+.modal{position:fixed;inset:0;background:rgba(0,0,0,0.5);display:none;align-items:center;justify-content:center;z-index:999}
+.modal-box{background:var(--bg);padding:16px;border-radius:8px;width:min(95%,520px);max-height:90vh;overflow:auto}
+.modal-box h3{margin-bottom:10px}
+.form-row{margin:8px 0;display:flex;flex-direction:column;gap:4px}
+.form-row label{font-size:0.9rem}
+.btn-group{display:flex;gap:6px;margin-top:10px;flex-wrap:wrap}
+.tip{font-size:0.8rem;color:#666;margin:4px 0}
+.dark .tip{color:#aaa}
+.search-result-item{padding:8px;border-bottom:1px solid var(--border);margin:4px 0}
+.search-result-item:last-child{border-bottom:none}
+.search-result-empty{text-align:center;color:#888;padding:20px}
+@media (max-width:768px){
+  table th:nth-child(1),table td:nth-child(1){display:none}
+  .block{font-size:0.7rem}
+  header h1{font-size:1rem}
+}
+</style>
+</head>
+<body>
+<div class="container">
+<header>
+<h1>大学课程表</h1>
+<div id="nowTime"></div>
+<button id="themeBtn">切换暗色主题</button>
+<button id="exportImg">导出课表图片</button>
+<button id="checkActBtn">检查3小时内活动</button>
+</header>
+<div class="week-select">
+<label>当前周：</label>
+<select id="weekSel"></select>
+<span class="tip">基准：2026-10-07 = 第5周 周三，页面自动计算当前周</span>
+</div>
+<!-- 新增：倒计时/今日状态提示 -->
+<div id="countDownTip"></div>
+<div class="search-bar">
+<input id="searchKey" placeholder="输入课程名称关键词搜索...">
+<select id="searchWeekDay">
+  <option value="-1">全部星期</option>
+  <option value="0">周一</option>
+  <option value="1">周二</option>
+  <option value="2">周三</option>
+  <option value="3">周四</option>
+  <option value="4">周五</option>
+  <option value="5">周六</option>
+  <option value="6">周日</option>
+</select>
+<button id="searchBtn">搜索课程</button>
+</div>
+<table id="table">
+<thead>
+<tr>
+<th class="time-col">节次<br/>时间</th>
+<th>周一</th><th>周二</th><th>周三</th><th>周四</th><th>周五</th><th>周六</th><th>周日</th>
+</tr>
+</thead>
+<tbody id="tbody"></tbody>
+</table>
+<div class="btn-group">
+<button id="addCourseBtn">添加课程</button>
+<button id="addActBtn">添加活动</button>
+</div>
+</div>
+<!-- 添加课程弹窗 -->
+<div class="modal" id="courseModal">
+<div class="modal-box">
+<h3>添加课程</h3>
+<div class="form-row"><label>课程名称</label><input id="cName"></div>
+<div class="form-row"><label>星期(0=周一~6=周日)</label><input type="number" min="0" max="6" value="0" id="cWeekDay"></div>
+<div class="form-row"><label>起始节次</label><input type="number" min="1" max="8" value="1" id="cStartSec"></div>
+<div class="form-row"><label>结束节次（连堂填大于起始，如2）</label><input type="number" min="1" max="8" value="2" id="cEndSec"></div>
+<div class="form-row"><label>周范围(开始周)</label><input type="number" min="1" max="20" value="1" id="cWStart"></div>
+<div class="form-row"><label>周范围(结束周)</label><input type="number" min="1" max="20" value="20" id="cWEnd"></div>
+<div class="form-row"><label>地点</label><input id="cLoc"></div>
+<div class="tip">提示：设置周范围后，仅对应周会显示该课程</div>
+<div class="btn-group">
+<button id="saveCourse">保存</button>
+<button class="gray closeModal">取消</button>
+</div>
+</div>
+</div>
+<!-- 添加活动弹窗 -->
+<div class="modal" id="actModal">
+<div class="modal-box">
+<h3>添加活动</h3>
+<div class="form-row"><label>活动名称</label><input id="aName"></div>
+<div class="form-row"><label>活动开始时间</label><input type="datetime-local" id="aTime"></div>
+<div class="btn-group">
+<button id="saveAct">保存</button>
+<button class="gray closeModal">取消</button>
+</div>
+</div>
+</div>
+<!-- 课程/活动详情弹窗 -->
+<div class="modal" id="detailModal">
+<div class="modal-box">
+<h3 id="detailTitle"></h3>
+<div id="detailBody"></div>
+<div class="btn-group">
+<button id="readVoice">语音朗读</button>
+<button class="danger" id="delItem">删除</button>
+<button class="gray closeModal">关闭</button>
+</div>
+</div>
+</div>
+<!-- 搜索结果弹窗 -->
+<div class="modal" id="searchModal">
+<div class="modal-box">
+<h3>搜索结果</h3>
+<div id="searchResultList"></div>
+<div class="btn-group">
+<button class="gray closeModal">关闭</button>
+</div>
+</div>
+</div>
+<script>
+// ========= 基础配置 =========
+const baseDateStr = "2026-10-07";
+const baseWeek = 5;
+const sectionTime = [
+  {sec:1,start:"08:30"},
+  {sec:2,start:"09:20"},
+  {sec:3,start:"10:25"},
+  {sec:4,start:"11:15"},
+  {sec:5,start:"14:00"},
+  {sec:6,start:"14:50"},
+  {sec:7,start:"15:45"},
+  {sec:8,start:"16:35"},
+];
+const weekDayName = ["周一","周二","周三","周四","周五","周六","周日"];
+let courseColorMap = {};
+let courses = JSON.parse(localStorage.getItem("courses")) || [];
+let activities = JSON.parse(localStorage.getItem("activities")) || [];
+let currentWeek = 1;
+let modalTarget = null;
+
+// 初始化周下拉（19、20周标记考试周）
+const weekSel = document.getElementById("weekSel");
+for(let i=1;i<=20;i++){
+  const opt = document.createElement("option");
+  opt.value=i;
+  opt.textContent = i >= 19 ? `第${i}周（考试周）` : `第${i}周`;
+  weekSel.appendChild(opt);
+}
+
+// 计算当前周
+function calcCurrentWeek(){
+  const base = new Date(baseDateStr);
+  const now = new Date();
+  const diffDay = Math.floor((now-base)/(1000*60*60*24));
+  const offsetWeek = Math.floor(diffDay /7);
+  let w = baseWeek + offsetWeek;
+  if(w<1)w=1;if(w>20)w=20;
+  return w;
+}
+
+// 辅助函数：时间字符串转分钟数
+function timeStrToMin(str){
+  const [h, m] = str.split(":").map(Number);
+  return h*60 + m;
+}
+
+// 新增：更新上课倒计时与今日课程状态
+function updateCountDown(){
+  const tipEl = document.getElementById("countDownTip");
+  const now = new Date();
+  const nowMin = now.getHours()*60 + now.getMinutes();
+  // 转换星期格式：0=周一 ... 6=周日
+  const todayWd = now.getDay() === 0 ? 6 : now.getDay() - 1;
+  
+  // 筛选本周今日的有效课程，按开始节次升序
+  const todayCourses = courses
+    .filter(c => c.weekDay === todayWd && currentWeek >= c.wStart && currentWeek <= c.wEnd)
+    .sort((a,b) => a.startSec - b.startSec);
+  
+  // 考试周或当日无课
+  if(todayCourses.length === 0){
+    tipEl.textContent = currentWeek >= 19 ? "📝 考试周，今日无课程安排" : "📅 今日无课程安排";
+    return;
+  }
+  
+  // 匹配状态：正在上课 / 等待下节课 / 全部结束
+  let nextCourse = null;
+  let isInClass = false;
+  let currentCourseName = "";
+  
+  for(const c of todayCourses){
+    const startMin = timeStrToMin(sectionTime[c.startSec - 1].start);
+    const endMin = timeStrToMin(sectionTime[c.endSec - 1].start) + 50; // 单节课按50分钟计算
+    
+    if(nowMin < startMin){
+      nextCourse = { ...c, startMin };
+      break;
+    }else if(nowMin >= startMin && nowMin < endMin){
+      isInClass = true;
+      currentCourseName = c.name;
+      break;
+    }
+  }
+  
+  if(isInClass){
+    tipEl.textContent = `🔔 正在上「${currentCourseName}」`;
+  }else if(nextCourse){
+    const diff = nextCourse.startMin - nowMin;
+    const hour = Math.floor(diff / 60);
+    const min = diff % 60;
+    let timeStr = "";
+    if(hour > 0) timeStr += `${hour}小时`;
+    timeStr += `${min}分钟`;
+    tipEl.textContent = `⏳ 距离「${nextCourse.name}」开始还有 ${timeStr}`;
+  }else{
+    tipEl.textContent = "✅ 今日课程已全部结束";
+  }
+}
+
+// 渲染课表（连堂rowspan + 周过滤 + 考试周处理）
+function render(){
+  const tbody = document.getElementById("tbody");
+  tbody.innerHTML="";
+  
+  // ===== 考试周特殊展示 =====
+  if(currentWeek >= 19){
+    tbody.innerHTML = `
+    <tr>
+      <td class="time-col">考试周</td>
+      <td colspan="7" style="padding:40px 0;text-align:center;">
+        <div style="font-size:1.2rem;margin-bottom:8px;">📝 第${currentWeek}周 · 考试周</div>
+        <div class="tip">无课程安排，请认真复习备考</div>
+      </td>
+    </tr>`;
+    highlightCurrentSection();
+    saveStorage();
+    updateCountDown();
+    return;
+  }
+  
+  // 8行x7列网格，标记单元格占用
+  const grid = Array.from({length:8}, ()=> Array(7).fill(null));
+  // 填充课程：按当前周过滤
+  courses.forEach(c=>{
+    // 核心：当前周不在课程周范围内，直接跳过
+    if(currentWeek < c.wStart || currentWeek > c.wEnd) return;
+    
+    if(!courseColorMap[c.name]) courseColorMap[c.name] = randomColor();
+    const startIdx = c.startSec - 1;
+    const endIdx = c.endSec - 1;
+    
+    grid[startIdx][c.weekDay] = {
+      type:"course",
+      data:c,
+      rowspan: endIdx - startIdx + 1,
+      color: courseColorMap[c.name]
+    };
+    // 标记后续行被占用
+    for(let i=startIdx+1; i<=endIdx; i++){
+      grid[i][c.weekDay] = {type:"span"};
+    }
+  })
+  // 填充活动
+  activities.forEach(a=>{
+    const dt = new Date(a.time);
+    const wd = dt.getDay();
+    const wd0 = wd===0?6:wd-1;
+    const sec = getSecByTime(a.time);
+    if(!sec) return;
+    const idx = sec - 1;
+    if(grid[idx][wd0] && grid[idx][wd0].type!=="span") return;
+    grid[idx][wd0] = {
+      type:"act",
+      data:a,
+      rowspan:1
+    };
+  })
+  // 生成表格
+  for(let row=0; row<8; row++){
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td class="time-col">第${sectionTime[row].sec}节<br/>${sectionTime[row].start}</td>`;
+    
+    for(let col=0; col<7; col++){
+      const cell = grid[row][col];
+      if(cell && cell.type === "span") continue;
+      const td = document.createElement("td");
+      td.className = "course-cell";
+      td.dataset.sec = sectionTime[row].sec;
+      td.dataset.wd = col;
+      if(cell && cell.type === "course"){
+        td.rowSpan = cell.rowspan;
+        const div = document.createElement("div");
+        div.className="block";
+        div.style.background = cell.color;
+        div.innerHTML = `<div>${cell.data.name}</div><div>${cell.data.loc}</div>`;
+        div.onclick = ()=>openDetail("course", cell.data);
+        td.appendChild(div);
+      }
+      
+      if(cell && cell.type === "act"){
+        const div = document.createElement("div");
+        div.className="block block-act";
+        div.style.background="#ffe082";
+        div.innerHTML = `<div>📌${cell.data.name}</div>`;
+        div.onclick = ()=>openDetail("act", cell.data);
+        td.appendChild(div);
+      }
+      tr.appendChild(td);
+    }
+    tbody.appendChild(tr);
+  }
+  highlightCurrentSection();
+  saveStorage();
+  updateCountDown(); // 渲染完更新倒计时
+}
+
+// 根据时间匹配节次
+function getSecByTime(datetimeStr){
+  const d = new Date(datetimeStr);
+  const h = d.getHours(),m=d.getMinutes();
+  const target = h*60+m;
+  for(let i=0;i<sectionTime.length;i++){
+    const [hh,mm] = sectionTime[i].start.split(":").map(Number);
+    const t = hh*60+mm;
+    if(target >= t) return sectionTime[i].sec;
+  }
+  return null;
+}
+
+// 随机浅颜色
+function randomColor(){
+  const r = 200+Math.floor(Math.random()*55);
+  const g = 200+Math.floor(Math.random()*55);
+  const b = 200+Math.floor(Math.random()*55);
+  return `rgb(${r},${g},${b})`;
+}
+
+// 实时时间
+function updateTime(){
+  const now = new Date();
+  document.getElementById("nowTime").innerText = now.toLocaleString("zh-CN");
+}
+setInterval(updateTime,1000);
+// 每分钟更新一次倒计时
+setInterval(updateCountDown, 60000);
+
+// 高亮当前节次 + 课前5分钟提醒
+function highlightCurrentSection(){
+  document.querySelectorAll(".current-cell").forEach(el=>el.classList.remove("current-cell"));
+  const now = new Date();
+  const h = now.getHours(),m=now.getMinutes();
+  const curMin = h*60+m;
+  for(let i=0;i<sectionTime.length;i++){
+    const [hh,mm] = sectionTime[i].start.split(":").map(Number);
+    const st = hh*60+mm;
+    const nextSt = i<sectionTime.length-1 ? (()=>{
+      const [nh,nm]=sectionTime[i+1].start.split(":").map(Number);return nh*60+nm;
+    })():24*60;
+    
+    if(curMin >= st -5 && curMin < st){
+      alert(`【课程提醒】第${sectionTime[i].sec}节课程还有5分钟开始！`);
+    }
+    if(curMin >= st && curMin < nextSt){
+      document.querySelectorAll(`td.course-cell[data-sec="${sectionTime[i].sec}"]`).forEach(td=>td.classList.add("current-cell"));
+    }
+  }
+}
+
+// 打开详情弹窗
+function openDetail(type,item){
+  modalTarget = {type,item};
+  const title = document.getElementById("detailTitle");
+  const body = document.getElementById("detailBody");
+  if(type==="course"){
+    title.innerText="课程详情";
+    body.innerHTML=`
+    <div>课程：${item.name}</div>
+    <div>星期：${weekDayName[item.weekDay]}</div>
+    <div>节次：${item.startSec}-${item.endSec}节</div>
+    <div>周次：第${item.wStart}~${item.wEnd}周</div>
+    <div>地点：${item.loc}</div>`;
+  }else{
+    title.innerText="活动详情";
+    body.innerHTML=`
+    <div>活动：${item.name}</div>
+    <div>时间：${new Date(item.time).toLocaleString()}</div>`;
+  }
+  document.getElementById("detailModal").style.display="flex";
+}
+
+// 语音朗读
+document.getElementById("readVoice").onclick = function(){
+  if(!modalTarget) return;
+  const item = modalTarget.item;
+  let txt="";
+  if(modalTarget.type==="course"){
+    txt=`课程：${item.name}，星期${weekDayName[item.weekDay].replace("周","")}，${item.startSec}到${item.endSec}节，第${item.wStart}至${item.wEnd}周，地点${item.loc}`;
+  }else{
+    txt=`活动：${item.name}，时间${new Date(item.time).toLocaleString()}`;
+  }
+  const utter = new SpeechSynthesisUtterance(txt);
+  speechSynthesis.speak(utter);
+}
+
+// 删除
+document.getElementById("delItem").onclick = function(){
+  if(!modalTarget) return;
+  if(modalTarget.type==="course"){
+    courses = courses.filter(c=>c.id!==modalTarget.item.id);
+  }else{
+    activities = activities.filter(a=>a.id!==modalTarget.item.id);
+  }
+  closeAllModal();
+  render();
+}
+
+// 弹窗开关
+document.getElementById("addCourseBtn").onclick = ()=>document.getElementById("courseModal").style.display="flex";
+document.getElementById("addActBtn").onclick = ()=>document.getElementById("actModal").style.display="flex";
+document.querySelectorAll(".closeModal").forEach(b=>b.onclick=closeAllModal);
+function closeAllModal(){
+  document.querySelectorAll(".modal").forEach(m=>m.style.display="none");
+  modalTarget=null;
+}
+
+// 保存课程
+document.getElementById("saveCourse").onclick = function(){
+  const name = document.getElementById("cName").value.trim();
+  const wd = Number(document.getElementById("cWeekDay").value);
+  const sS = Number(document.getElementById("cStartSec").value);
+  const eS = Number(document.getElementById("cEndSec").value);
+  const wS = Number(document.getElementById("cWStart").value);
+  const wE = Number(document.getElementById("cWEnd").value);
+  const loc = document.getElementById("cLoc").value.trim();
+  if(!name){alert("请填写课程名称");return;}
+  if(wd<0||wd>6||sS<1||sS>8||eS<1||eS>8||sS>eS){alert("节次或星期参数错误");return;}
+  if(wS<1||wE>20||wS>wE){alert("周范围参数错误");return;}
+  courses.push({id:Date.now(),name,weekDay:wd,startSec:sS,endSec:eS,wStart:wS,wEnd:wE,loc});
+  closeAllModal();
+  render();
+}
+
+// 保存活动
+document.getElementById("saveAct").onclick = function(){
+  const name = document.getElementById("aName").value.trim();
+  const time = document.getElementById("aTime").value;
+  if(!name||!time){alert("填写活动名称和时间");return;}
+  activities.push({id:Date.now(),name,time});
+  closeAllModal();
+  render();
+  requestNotificationPermission();
+}
+
+// 本地存储
+function saveStorage(){
+  localStorage.setItem("courses",JSON.stringify(courses));
+  localStorage.setItem("activities",JSON.stringify(activities));
+}
+
+// 周切换
+weekSel.onchange = function(){
+  currentWeek = Number(this.value);
+  render();
+}
+
+// 暗色主题
+document.getElementById("themeBtn").onclick = function(){
+  document.body.classList.toggle("dark");
+}
+
+// 导出图片
+document.getElementById("exportImg").onclick = async function(){
+  const tableDom = document.getElementById("table");
+  const canvas = await html2canvas(tableDom);
+  const link = document.createElement("a");
+  link.download="课表.png";
+  link.href = canvas.toDataURL();
+  link.click();
+}
+
+// ========= 活动提醒模块 =========
+function requestNotificationPermission(){
+  if(Notification && Notification.permission!=="granted") Notification.requestPermission();
+}
+function scanNearActivities(){
+  const now = new Date();
+  const near = activities.filter(a=>{
+    const t = new Date(a.time);
+    const diff = t - now;
+    return diff >= 0 && diff <= 3*60*60*1000;
+  })
+  if(near.length===0){
+    alert("✅ 没有3小时内要开始的活动");
+    return;
+  }
+  let msg="【即将开始活动】\n";
+  near.forEach(it=>msg += `${it.name} ${new Date(it.time).toLocaleString()}\n`);
+  alert(msg);
+  if(Notification && Notification.permission==="granted"){
+    new Notification("课表提醒",{body:msg});
+  }
+}
+document.getElementById("checkActBtn").onclick = scanNearActivities;
+setInterval(scanNearActivities, 5*60*1000);
+setInterval(()=>{
+  const now = new Date();
+  activities.forEach(a=>{
+    const t = new Date(a.time);
+    const diff = t - now;
+    if(diff >= 0 && diff <= 10000 && diff >= (3*60*60*1000 -10000)){
+      alert(`【活动提醒】${a.name} 将在3小时后开始！`);
+      if(Notification && Notification.permission==="granted"){
+        new Notification("活动提前3小时提醒",{body:a.name});
+      }
+    }
+  })
+},1000);
+
+// ========= 搜索功能 =========
+document.getElementById("searchBtn").onclick = function(){
+  const key = document.getElementById("searchKey").value.trim().toLowerCase();
+  const wd = Number(document.getElementById("searchWeekDay").value);
+  const results = courses.filter(c => {
+    const nameMatch = !key || c.name.toLowerCase().includes(key);
+    const wdMatch = wd === -1 || c.weekDay === wd;
+    return nameMatch && wdMatch;
+  });
+  showSearchResult(results);
+}
+function showSearchResult(list){
+  const box = document.getElementById("searchResultList");
+  if(list.length === 0){
+    box.innerHTML = `<div class="search-result-empty">未找到匹配的课程</div>`;
+  }else{
+    let html = "";
+    list.forEach(c=>{
+      html += `
+      <div class="search-result-item">
+        <div><strong>${c.name}</strong></div>
+        <div>星期：${weekDayName[c.weekDay]} | 节次：${c.startSec}-${c.endSec}节</div>
+        <div>周次：第${c.wStart}~${c.wEnd}周 | 地点：${c.loc || "无"}</div>
+      </div>`;
+    })
+    box.innerHTML = html;
+  }
+  document.getElementById("searchModal").style.display = "flex";
+}
+document.getElementById("searchKey").addEventListener("keydown",function(e){
+  if(e.key === "Enter") document.getElementById("searchBtn").click();
+});
+
+// 初始化
+updateTime();
+currentWeek = calcCurrentWeek();
+weekSel.value = currentWeek;
+render();
+requestNotificationPermission();
+</script>
+</body>
+</html>
